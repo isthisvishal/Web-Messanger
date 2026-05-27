@@ -63,6 +63,16 @@ export default function AdminUsersPage() {
     } catch { toast.error("Failed"); } finally { setActionLoading(false); }
   };
 
+  const handleVerify = async (id: string) => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/admin/users/${id}/verify`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) { toast.success("User verified successfully"); fetchUsers(); }
+      else { toast.error(data.error || "Failed to verify user"); }
+    } catch { toast.error("Failed"); } finally { setActionLoading(false); }
+  };
+
   const handleRole = async (id: string, action: "promote" | "demote") => {
     setActionLoading(true);
     try {
@@ -154,11 +164,22 @@ export default function AdminUsersPage() {
                         </span>
                       </td>
                       <td className="p-4">
-                        {user.isBanned ? (
-                          <span className="text-xs px-2 py-1 rounded-full bg-red-500/20 text-red-400">Banned</span>
-                        ) : (
-                          <span className="text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-400">Active</span>
-                        )}
+                        <div className="flex flex-col gap-1 items-start">
+                          {user.isBanned ? (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">Banned</span>
+                          ) : (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">Active</span>
+                          )}
+                          {user.emailVerified ? (
+                            <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-0.5">
+                              <UserCheck className="w-3 h-3 text-green-500" /> Verified
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-medium text-destructive flex items-center gap-0.5">
+                              <ShieldAlert className="w-3 h-3" /> Unverified
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-4 text-sm text-muted-foreground">{new Date(user.createdAt).toLocaleDateString()}</td>
                       <td className="p-4 text-right">
@@ -172,6 +193,11 @@ export default function AdminUsersPage() {
                               ) : (
                                 <Button size="sm" variant="destructive" onClick={() => setBanModal(user.id)} disabled={actionLoading}>
                                   <Ban className="w-3 h-3 mr-1" />Ban
+                                </Button>
+                              )}
+                              {!user.emailVerified && (
+                                <Button size="sm" variant="outline" onClick={() => handleVerify(user.id)} disabled={actionLoading} className="text-green-500 hover:text-green-600">
+                                  <UserCheck className="w-3 h-3 mr-1" />Verify
                                 </Button>
                               )}
                               {user.role === "USER" && (
