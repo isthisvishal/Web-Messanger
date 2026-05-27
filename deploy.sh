@@ -47,8 +47,8 @@ info "Writing .env..."
 cat > .env << EOF
 DATABASE_URL=postgresql://web_messenger:${POSTGRES_PASSWORD}@postgres:5432/web_messenger
 REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
-UPSTASH_REDIS_REST_URL=
-UPSTASH_REDIS_REST_TOKEN=
+UPSTASH_REDIS_REST_URL=http://srh:80
+UPSTASH_REDIS_REST_TOKEN=${REDIS_PASSWORD}
 NEXT_PUBLIC_APP_URL=https://${DOMAIN}
 NEXT_PUBLIC_APP_NAME=Web Messenger
 NODE_ENV=production
@@ -80,6 +80,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      srh:
+        condition: service_started
     networks: [wm]
     labels:
       - "traefik.enable=true"
@@ -116,6 +118,18 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  srh:
+    image: hiett/serverless-redis-http:latest
+    restart: unless-stopped
+    environment:
+      - SRH_MODE=env
+      - SRH_TOKEN=${REDIS_PASSWORD}
+      - SRH_CONNECTION_STRING=redis://:${REDIS_PASSWORD}@redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [wm]
 
   traefik:
     image: traefik:v3.0
