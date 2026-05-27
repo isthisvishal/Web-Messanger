@@ -163,7 +163,7 @@ for i in {1..30}; do
 done
 
 info "Running database migrations..."
-docker compose exec app npx prisma migrate deploy
+docker compose exec app npx prisma@5.22.0 migrate deploy
 
 echo ""
 success "Web Messenger deployed successfully!"
