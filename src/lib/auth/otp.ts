@@ -1,4 +1,4 @@
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { generateOtp } from "@/lib/crypto/server";
 import type { OtpPurpose } from "@prisma/client";
