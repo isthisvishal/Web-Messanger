@@ -4,11 +4,11 @@ RUN apk add --no-cache libc6-compat openssl
 
 FROM base AS deps
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
 FROM base AS builder
 COPY package*.json ./
-RUN npm ci
+RUN npm install --no-audit --no-fund
 COPY . .
 RUN npx prisma generate
 ENV NEXT_TELEMETRY_DISABLED=1
