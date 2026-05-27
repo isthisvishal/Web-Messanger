@@ -146,7 +146,7 @@ export default function ChatPage() {
 
       setCryptoContext(result.context);
       setIsUnlocked(true);
-      sessionStorage.removeItem("temp_password");
+      sessionStorage.setItem("temp_password", password);
       toast.success("Zero-Knowledge secure identity initialized!");
       fetchConversations(result.context);
     } catch (err: any) {
@@ -169,7 +169,7 @@ export default function ChatPage() {
       );
       setCryptoContext(context);
       setIsUnlocked(true);
-      sessionStorage.removeItem("temp_password");
+      sessionStorage.setItem("temp_password", password);
       toast.success("Secure identity unlocked!");
       fetchConversations(context);
     } catch (err) {
@@ -197,6 +197,7 @@ export default function ChatPage() {
         );
         setCryptoContext(context);
         setIsUnlocked(true);
+        sessionStorage.setItem("temp_password", keyPassword);
         setKeyPassword("");
         toast.success("Messages decrypted successfully!");
         fetchConversations(context);
