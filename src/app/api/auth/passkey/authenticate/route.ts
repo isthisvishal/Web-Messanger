@@ -34,8 +34,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Account suspended" }, { status: 403 });
     }
 
+    const host = request.headers.get("host") || "localhost";
+    const hostname = host.split(":")[0];
+    const rpID = process.env.NODE_ENV === "development" ? hostname : (process.env.WEBAUTHN_RP_ID || "localhost");
+
     const options = await generateAuthenticationOptions({
-      rpID: process.env.WEBAUTHN_RP_ID || "localhost",
+      rpID,
       allowCredentials: user.passkeys.map((pk) => ({
         id: Buffer.from(pk.credentialId, "base64url"),
         transports: pk.transports as AuthenticatorTransport[],

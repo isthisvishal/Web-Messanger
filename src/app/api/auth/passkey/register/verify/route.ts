@@ -31,11 +31,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Challenge expired" }, { status: 400 });
     }
 
+    const host = request.headers.get("host") || "localhost";
+    const hostname = host.split(":")[0];
+    const origin = request.headers.get("origin") || `https://${host}`;
+
+    const expectedOrigin = process.env.NODE_ENV === "development" ? origin : (process.env.WEBAUTHN_ORIGIN || "http://localhost:3000");
+    const expectedRPID = process.env.NODE_ENV === "development" ? hostname : (process.env.WEBAUTHN_RP_ID || "localhost");
+
     const verification = await verifyRegistrationResponse({
       response,
       expectedChallenge: challenge,
-      expectedOrigin: process.env.WEBAUTHN_ORIGIN || "http://localhost:3000",
-      expectedRPID: process.env.WEBAUTHN_RP_ID || "localhost",
+      expectedOrigin,
+      expectedRPID,
     });
 
     if (!verification.verified || !verification.registrationInfo) {

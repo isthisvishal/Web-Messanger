@@ -57,7 +57,18 @@ export function middleware(request: NextRequest) {
   ) {
     const origin = request.headers.get("origin");
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    if (origin && !origin.startsWith(appUrl)) {
+    const host = request.headers.get("host");
+    const isDev = process.env.NODE_ENV === "development";
+    
+    // In dev, allow origins matching the current request host (like a Cloudflare Tunnel) or localhost
+    const isAllowedDevOrigin = isDev && origin && host && (
+      origin.includes(host) || 
+      origin.startsWith("http://localhost:") || 
+      origin.startsWith("https://localhost:") || 
+      origin.includes("trycloudflare.com")
+    );
+
+    if (origin && !origin.startsWith(appUrl) && !isAllowedDevOrigin) {
       return withCsp(NextResponse.json({ error: "CSRF validation failed" }, { status: 403 }));
     }
   }

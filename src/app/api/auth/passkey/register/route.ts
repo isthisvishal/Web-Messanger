@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { generateRegistrationOptions } from "@simplewebauthn/server";
 import { getSession } from "@/lib/auth/session";
 import { logError } from "@/lib/logger";
@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import { rateLimiters, applyRateLimit } from "@/lib/ratelimit";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
     const session = await getSession();
     if (!session) {
@@ -33,9 +33,13 @@ export async function POST() {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
     }
 
+    const host = request.headers.get("host") || "localhost";
+    const hostname = host.split(":")[0];
+    const rpID = process.env.NODE_ENV === "development" ? hostname : (process.env.WEBAUTHN_RP_ID || "localhost");
+
     const options = await generateRegistrationOptions({
       rpName: process.env.WEBAUTHN_RP_NAME || "Web Messenger",
-      rpID: process.env.WEBAUTHN_RP_ID || "localhost",
+      rpID,
       userID: new TextEncoder().encode(user.id),
       userName: user.email,
       userDisplayName: user.displayName,
