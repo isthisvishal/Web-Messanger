@@ -43,10 +43,15 @@ export async function POST(request: NextRequest) {
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
-      return NextResponse.json(
-        { success: false, error: "An account with this email already exists" },
-        { status: 409, headers: rl.headers }
-      );
+      if (existing.emailVerified) {
+        return NextResponse.json(
+          { success: false, error: "An account with this email already exists" },
+          { status: 409, headers: rl.headers }
+        );
+      } else {
+        // Delete the unverified user to allow the new registration attempt to succeed
+        await prisma.user.delete({ where: { id: existing.id } });
+      }
     }
 
     const passwordHash = await hashPassword(password);

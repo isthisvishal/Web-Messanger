@@ -25,6 +25,8 @@ export default function AdminUsersPage() {
   const [banModal, setBanModal] = useState<string | null>(null);
   const [banReason, setBanReason] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [createModal, setCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({ email: "", displayName: "", password: "", role: "USER" });
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -86,6 +88,31 @@ export default function AdminUsersPage() {
     } catch { toast.error("Failed"); } finally { setActionLoading(false); }
   };
 
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (createForm.password.length < 8) { toast.error("Password must be at least 8 characters"); return; }
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/admin/users`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createForm),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("User created successfully!");
+        setCreateModal(false);
+        setCreateForm({ email: "", displayName: "", password: "", role: "USER" });
+        fetchUsers();
+      } else {
+        toast.error(data.error || "Failed to create user");
+      }
+    } catch {
+      toast.error("Failed");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const roleIcon = (role: string) => {
     if (role === "SUPER_ADMIN") return <Crown className="w-4 h-4 text-yellow-400" />;
     if (role === "ADMIN") return <ShieldCheck className="w-4 h-4 text-blue-400" />;
@@ -99,7 +126,10 @@ export default function AdminUsersPage() {
       <div className="border-b border-border bg-card/50 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <h1 className="text-2xl font-bold">User Management</h1>
-          <Link href="/admin" className="text-sm text-primary hover:underline">← Dashboard</Link>
+          <div className="flex items-center gap-4">
+            <Button size="sm" onClick={() => setCreateModal(true)}>Create User</Button>
+            <Link href="/admin" className="text-sm text-primary hover:underline">← Dashboard</Link>
+          </div>
         </div>
       </div>
 
@@ -248,6 +278,43 @@ export default function AdminUsersPage() {
                   </Button>
                 </div>
               </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {createModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <Card className="w-full max-w-md glass-card">
+              <CardHeader><CardTitle>Create New User</CardTitle></CardHeader>
+              <form onSubmit={handleCreateUser}>
+                <CardContent className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium text-foreground">Display Name</label>
+                    <Input required value={createForm.displayName} onChange={e => setCreateForm(f => ({ ...f, displayName: e.target.value }))} placeholder="John Doe" className="mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-foreground">Email Address</label>
+                    <Input required type="email" value={createForm.email} onChange={e => setCreateForm(f => ({ ...f, email: e.target.value }))} placeholder="john@example.com" className="mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-foreground">Password (min 8 chars)</label>
+                    <Input required type="password" value={createForm.password} onChange={e => setCreateForm(f => ({ ...f, password: e.target.value }))} placeholder="••••••••" className="mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-foreground">Role</label>
+                    <select className="w-full mt-1 p-2 rounded-lg border border-input bg-background text-sm text-foreground focus:ring-2 focus:ring-primary" value={createForm.role} onChange={e => setCreateForm(f => ({ ...f, role: e.target.value }))}>
+                      <option value="USER">USER</option>
+                      <option value="ADMIN">ADMIN</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-2 justify-end pt-2">
+                    <Button type="button" variant="outline" onClick={() => { setCreateModal(false); setCreateForm({ email: "", displayName: "", password: "", role: "USER" }); }}>Cancel</Button>
+                    <Button type="submit" disabled={actionLoading}>
+                      {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create User"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </form>
             </Card>
           </div>
         )}
