@@ -38,10 +38,21 @@ else
 fi
 
 info "Generating cryptographic secrets..."
-SESSION_SECRET=$(openssl rand -base64 32)
-SERVER_ENCRYPTION_KEY=$(openssl rand -base64 32)
-POSTGRES_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
-REDIS_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
+if [ -f .env ]; then
+  info "Found existing .env file. Preserving existing secrets..."
+  SESSION_SECRET=$(grep '^SESSION_SECRET=' .env | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+  SERVER_ENCRYPTION_KEY=$(grep '^SERVER_ENCRYPTION_KEY=' .env | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+  # Extract password from DATABASE_URL: postgresql://web_messenger:PASSWORD@postgres:5432/...
+  POSTGRES_PASSWORD=$(grep '^DATABASE_URL=' .env | sed -E 's/.*:\/\/.*:(.*)@.*/\1/' | tr -d '"' | tr -d "'")
+  # Extract password from REDIS_URL: redis://:PASSWORD@redis:6379
+  REDIS_PASSWORD=$(grep '^REDIS_URL=' .env | sed -E 's/.*:\/\/.*:(.*)@.*/\1/' | tr -d '"' | tr -d "'")
+fi
+
+# Generate new secrets if not already set/found
+[[ -z "$SESSION_SECRET" ]] && SESSION_SECRET=$(openssl rand -base64 32)
+[[ -z "$SERVER_ENCRYPTION_KEY" ]] && SERVER_ENCRYPTION_KEY=$(openssl rand -base64 32)
+[[ -z "$POSTGRES_PASSWORD" ]] && POSTGRES_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
+[[ -z "$REDIS_PASSWORD" ]] && REDIS_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
 
 info "Writing .env..."
 cat > .env << EOF
