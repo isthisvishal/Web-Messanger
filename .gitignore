@@ -72,3 +72,7 @@ docker-compose.override.yml
 # Local deploy artifacts
 deploy-secrets.txt
 deploy-to-vps.sh
+
+# Uploads and binaries
+public/uploads/
+cloudflared
