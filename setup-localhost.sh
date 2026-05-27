@@ -30,15 +30,67 @@ echo "  Web Messenger — Localhost Setup & Deployment"
 echo "  ============================================"
 echo -e "${NC}"
 
-# Check and install Node.js / NPM / Docker
+# Fix Kali Docker APT repository if broken
+if [ -f /etc/apt/sources.list.d/docker.list ]; then
+  if grep -q "kali-rolling" /etc/apt/sources.list.d/docker.list || grep -q "download.docker.com" /etc/apt/sources.list.d/docker.list; then
+    info "Detected broken/unsupported Docker APT repository list. Removing it to fix apt..."
+    sudo rm -f /etc/apt/sources.list.d/docker.list
+  fi
+fi
+
+# Load NVM if it is installed
+export NVM_DIR="$HOME/.config/nvm"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  info "Loading NVM from $NVM_DIR..."
+  . "$NVM_DIR/nvm.sh"
+elif [ -s "$HOME/.nvm/nvm.sh" ]; then
+  export NVM_DIR="$HOME/.nvm"
+  info "Loading NVM from $NVM_DIR..."
+  . "$NVM_DIR/nvm.sh"
+fi
+
+# Install Node.js v20 if not available
+if ! command -v node >/dev/null 2>&1; then
+  info "Node.js not found. Installing NVM and Node.js v20..."
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+  export NVM_DIR="$HOME/.config/nvm"
+  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+  [ -s "$HOME/.nvm/nvm.sh" ] && { export NVM_DIR="$HOME/.nvm"; \. "$NVM_DIR/nvm.sh"; }
+  
+  if command -v nvm >/dev/null 2>&1; then
+    nvm install 20
+    nvm use 20
+    nvm alias default 20
+  else
+    error "Failed to install NVM. Please install Node.js (v20+) manually."
+  fi
+fi
+
+# Verify Node and NPM
+info "Using Node.js $(node -v) and NPM $(npm -v)"
+
+# Install Docker if missing
 MISSING_DEPS=()
-if ! command -v node >/dev/null 2>&1; then MISSING_DEPS+=("nodejs"); fi
-if ! command -v npm >/dev/null 2>&1; then MISSING_DEPS+=("npm"); fi
-if ! command -v docker >/dev/null 2>&1; then MISSING_DEPS+=("docker.io"); fi
-if ! docker compose version >/dev/null 2>&1 && ! command -v docker-compose >/dev/null 2>&1; then MISSING_DEPS+=("docker-compose"); fi
+if ! command -v docker >/dev/null 2>&1; then
+  if apt-cache show docker.io >/dev/null 2>&1; then
+    MISSING_DEPS+=("docker.io")
+  else
+    MISSING_DEPS+=("docker-ce")
+  fi
+fi
+
+if ! docker compose version >/dev/null 2>&1 && ! command -v docker-compose >/dev/null 2>&1; then
+  if apt-cache show docker-compose-plugin >/dev/null 2>&1; then
+    MISSING_DEPS+=("docker-compose-plugin")
+  elif apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+    MISSING_DEPS+=("docker-compose-v2")
+  elif apt-cache show docker-compose >/dev/null 2>&1; then
+    MISSING_DEPS+=("docker-compose")
+  fi
+fi
 
 if [ ${#MISSING_DEPS[@]} -ne 0 ]; then
-  info "Missing dependencies: ${MISSING_DEPS[*]}. Installing via apt..."
+  info "Missing Docker packages: ${MISSING_DEPS[*]}. Installing via apt..."
   sudo apt-get update
   sudo apt-get install -y "${MISSING_DEPS[@]}"
 fi
@@ -50,11 +102,11 @@ if ! systemctl is-active --quiet docker; then
   sudo systemctl enable docker
 fi
 
-# Ensure user is in docker group (to avoid running docker as sudo in future)
+# Ensure user is in docker group
 if ! groups $USER | grep &>/dev/null '\bdocker\b'; then
   warn "Adding user $USER to the docker group..."
   sudo usermod -aG docker $USER
-  warn "You might need to log out and log back in for docker group changes to take effect."
+  warn "You might need to log out and log back in (or run 'newgrp docker') for docker group changes to take effect."
 fi
 
 # Create local .env if it doesn't exist
@@ -81,23 +133,43 @@ fi
 
 # Start local databases/services via Docker Compose
 info "Starting PostgreSQL, Redis, and SRH proxy containers..."
-# Try 'docker compose' first, fallback to 'docker-compose'
+# Run docker compose without sudo if possible, otherwise fall back to sudo
 if docker compose version >/dev/null 2>&1; then
-  sudo docker compose up -d
+  docker compose up -d || sudo docker compose up -d
+elif docker-compose version >/dev/null 2>&1; then
+  docker-compose up -d || sudo docker-compose up -d
 else
-  sudo docker-compose up -d
+  error "Neither 'docker compose' nor 'docker-compose' was found."
 fi
 
 # Wait for Postgres to be ready
 info "Waiting for PostgreSQL container to start..."
+POSTGRES_CONTAINER=""
 for i in {1..30}; do
-  if sudo docker exec web-messanger-postgres-1 pg_isready -U web_messenger -d web_messenger >/dev/null 2>&1 || \
-     sudo docker exec messager_web-postgres-1 pg_isready -U web_messenger -d web_messenger >/dev/null 2>&1 || \
-     sudo docker exec postgres-1 pg_isready -U web_messenger -d web_messenger >/dev/null 2>&1; then
-    break
+  # Find the active postgres container name
+  CONTAINER_NAME=$(docker ps --format "{{.Names}}" | grep postgres || true)
+  if [ -n "$CONTAINER_NAME" ]; then
+    if docker exec "$CONTAINER_NAME" pg_isready -U web_messenger -d web_messenger >/dev/null 2>&1; then
+      POSTGRES_CONTAINER="$CONTAINER_NAME"
+      break
+    fi
+  fi
+  # Fallback to sudo if permission denied
+  CONTAINER_NAME_SUDO=$(sudo docker ps --format "{{.Names}}" | grep postgres || true)
+  if [ -n "$CONTAINER_NAME_SUDO" ]; then
+    if sudo docker exec "$CONTAINER_NAME_SUDO" pg_isready -U web_messenger -d web_messenger >/dev/null 2>&1; then
+      POSTGRES_CONTAINER="$CONTAINER_NAME_SUDO"
+      break
+    fi
   fi
   sleep 2
 done
+
+if [ -z "$POSTGRES_CONTAINER" ]; then
+  warn "PostgreSQL is taking longer to start or container not found. Proceeding anyway..."
+else
+  success "PostgreSQL is ready! (Container: $POSTGRES_CONTAINER)"
+fi
 
 # Install local dependencies
 info "Installing npm packages..."
@@ -105,7 +177,8 @@ npm install
 
 # Run database migrations
 info "Running database migrations locally..."
-npx prisma migrate dev --name init
+npx prisma generate
+npx prisma migrate dev --name init || npx prisma db push
 
 # Run the development server
 success "Localhost environment ready! Starting development server on http://localhost:3000..."

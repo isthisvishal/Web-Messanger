@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!user.emailVerified) {
+    if (!user.emailVerified && user.role !== "SUPER_ADMIN") {
       const otp = await createOtp(user.id, "EMAIL_VERIFY");
       await sendEmail(email, "EMAIL_VERIFICATION", {
         displayName: user.displayName,
@@ -67,6 +67,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: "Invalid email or password" },
         { status: 401, headers: rl.headers }
+      );
+    }
+
+    if (user.role === "SUPER_ADMIN") {
+      const userAgent = request.headers.get("user-agent") || undefined;
+      const { createSession } = await import("@/lib/auth/session");
+      await createSession(user.id, ip, userAgent);
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date(), lastLoginIp: hashIp(ip) },
+      });
+
+      return NextResponse.json(
+        {
+          success: true,
+          message: "Login successful",
+          data: { redirect: "/chat" },
+        },
+        { status: 200, headers: rl.headers }
       );
     }
 

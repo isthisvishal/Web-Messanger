@@ -50,6 +50,12 @@ export default function RegisterPage() {
         return;
       }
 
+      if (data.data?.redirect) {
+        toast.success("Account created successfully!");
+        router.push(data.data.redirect);
+        return;
+      }
+
       toast.success("Account created! Check your email for the verification code.");
       router.push(`/verify-otp?email=${encodeURIComponent(form.email)}&purpose=EMAIL_VERIFY`);
     } catch {

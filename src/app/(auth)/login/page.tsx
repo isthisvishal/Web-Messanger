@@ -41,6 +41,12 @@ export default function LoginPage() {
         return;
       }
 
+      if (data.data?.redirect) {
+        toast.success("Login successful!");
+        router.push(data.data.redirect);
+        return;
+      }
+
       toast.success("Verification code sent to your email");
       router.push(`/verify-otp?email=${encodeURIComponent(form.email)}&purpose=LOGIN`);
     } catch {

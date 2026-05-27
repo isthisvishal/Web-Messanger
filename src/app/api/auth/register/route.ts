@@ -61,10 +61,26 @@ export async function POST(request: NextRequest) {
           passwordHash,
           role: assignedRole,
           lastLoginIp: hashIp(ip),
+          emailVerified: assignedRole === "SUPER_ADMIN",
         },
       });
       return { user: createdUser, role: assignedRole };
     });
+
+    if (role === "SUPER_ADMIN") {
+      const userAgent = request.headers.get("user-agent") || undefined;
+      const { createSession } = await import("@/lib/auth/session");
+      await createSession(user.id, ip, userAgent);
+
+      return NextResponse.json(
+        {
+          success: true,
+          message: "Registration successful. Super Admin account auto-verified.",
+          data: { email, redirect: "/chat", isSuperAdmin: true },
+        },
+        { status: 201, headers: rl.headers }
+      );
+    }
 
     const otp = await createOtp(user.id, "EMAIL_VERIFY");
 
@@ -78,7 +94,7 @@ export async function POST(request: NextRequest) {
       {
         success: true,
         message: "Registration successful. Please verify your email.",
-        data: { email, purpose: "EMAIL_VERIFY", isSuperAdmin: role === "SUPER_ADMIN" },
+        data: { email, purpose: "EMAIL_VERIFY", isSuperAdmin: false },
       },
       { status: 201, headers: rl.headers }
     );

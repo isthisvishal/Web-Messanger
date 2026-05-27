@@ -28,6 +28,16 @@ export async function createOtp(userId: string, purpose: OtpPurpose): Promise<st
   const expiresAt = new Date(Date.now() + OTP_EXPIRY[purpose] * 60 * 1000);
 
   await prisma.otpCode.create({ data: { userId, purpose, codeHash, expiresAt } });
+
+  // Log the OTP in development mode so it's easy to retrieve from server logs
+  if (process.env.NODE_ENV === "development" || !process.env.NODE_ENV) {
+    console.log("\n========================================");
+    console.log(`[DEV ONLY] OTP for User ID: ${userId}`);
+    console.log(`Purpose: ${purpose}`);
+    console.log(`OTP Code: ${code}`);
+    console.log("========================================\n");
+  }
+
   return code;
 }
 
