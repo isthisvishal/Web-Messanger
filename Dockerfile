@@ -12,6 +12,7 @@ RUN npm install --no-audit --no-fund --ignore-scripts
 COPY . .
 RUN npx prisma generate
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV IS_BUILD_STAGE=true
 RUN npm run build
 
 FROM base AS runner
