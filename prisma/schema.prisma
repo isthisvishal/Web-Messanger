@@ -233,3 +233,9 @@ enum EmailTemplateType {
   ACCOUNT_BANNED
   PASSWORD_CHANGED
 }
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

@@ -40,6 +40,7 @@ export default function AdminDashboard() {
     { title: "Banned", value: stats?.bannedUsers ?? "—", icon: ShieldAlert, color: "text-red-400", href: "/admin/users" },
     { title: "Messages (24h)", value: stats?.messagesLast24h ?? "—", icon: MessageSquare, color: "text-purple-400", href: "#" },
     { title: "SMTP Status", value: stats?.smtpActive ? "Active" : "Not configured", icon: Mail, color: "text-orange-400", href: "/admin/smtp" },
+    { title: "Upload Settings", value: "Limits & Expiry", icon: Settings, color: "text-teal-400", href: "/admin/uploads" },
   ];
 
   return (
@@ -51,6 +52,7 @@ export default function AdminDashboard() {
             <Link href="/admin/users" className="px-3 py-2 text-sm rounded-lg hover:bg-accent transition-colors">Users</Link>
             <Link href="/admin/smtp" className="px-3 py-2 text-sm rounded-lg hover:bg-accent transition-colors">SMTP</Link>
             <Link href="/admin/email-templates" className="px-3 py-2 text-sm rounded-lg hover:bg-accent transition-colors">Templates</Link>
+            <Link href="/admin/uploads" className="px-3 py-2 text-sm rounded-lg hover:bg-accent transition-colors">Uploads</Link>
             <Link href="/chat" className="px-3 py-2 text-sm rounded-lg hover:bg-accent transition-colors">← Back</Link>
           </div>
         </div>

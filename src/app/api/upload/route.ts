@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
+import { getSetting } from "@/lib/settings";
 import fs from "fs";
 import path from "path";
 
@@ -18,8 +19,27 @@ const ALLOWED_EXTENSIONS = new Set([
 // Blocked terms anywhere in the filename (to prevent double-extension or nested archive bypasses)
 const BLOCKED_TERMS = ["zip", "tar", "gz", "rar", "7z", "exe", "bat", "sh", "cmd", "msi", "scr", "pif", "com"];
 
-// 15 MB size limit
-const MAX_FILE_SIZE = 15 * 1024 * 1024;
+async function cleanExpiredFiles(expiryHours: number) {
+  try {
+    const uploadDir = path.join(process.cwd(), "public", "uploads");
+    if (!fs.existsSync(uploadDir)) return;
+
+    const files = fs.readdirSync(uploadDir);
+    const now = Date.now();
+    const expiryMs = expiryHours * 60 * 60 * 1000;
+
+    for (const file of files) {
+      const filePath = path.join(uploadDir, file);
+      const stat = fs.statSync(filePath);
+      if (now - stat.mtimeMs > expiryMs) {
+        fs.unlinkSync(filePath);
+        console.log(`Deleted expired file: ${file}`);
+      }
+    }
+  } catch (error) {
+    console.error("Failed to clean expired files:", error);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,6 +48,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
+    // Retrieve settings (Fallbacks: 15MB max upload, 24 hours expiry)
+    const maxUploadSizeStr = await getSetting("MAX_UPLOAD_SIZE", "15"); // in MB
+    const fileExpiryHoursStr = await getSetting("FILE_EXPIRY_HOURS", "24"); // in Hours
+
+    const maxUploadSizeMB = parseFloat(maxUploadSizeStr) || 15;
+    const fileExpiryHours = parseFloat(fileExpiryHoursStr) || 24;
+
+    // Trigger cleanup asynchronously
+    cleanExpiredFiles(fileExpiryHours).catch(err => console.error("Clean task error:", err));
+
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
 
@@ -35,9 +65,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "No file uploaded" }, { status: 400 });
     }
 
-    // Validate size
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ success: false, error: "File exceeds 15MB limit" }, { status: 400 });
+    // Validate size limit dynamically
+    const maxSizeBytes = maxUploadSizeMB * 1024 * 1024;
+    if (file.size > maxSizeBytes) {
+      return NextResponse.json({
+        success: false,
+        error: `File exceeds the maximum upload limit of ${maxUploadSizeMB}MB`
+      }, { status: 400 });
     }
 
     const originalName = file.name || "upload";
