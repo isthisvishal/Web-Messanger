@@ -127,7 +127,7 @@ export default function AdminUsersPage() {
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <h1 className="text-2xl font-bold">User Management</h1>
           <div className="flex items-center gap-4">
-            <Button size="sm" onClick={() => setCreateModal(true)}>Create User</Button>
+            <Button type="button" size="sm" onClick={() => { console.log("Create User Button Clicked"); setCreateModal(true); }}>Create User</Button>
             <Link href="/admin" className="text-sm text-primary hover:underline">← Dashboard</Link>
           </div>
         </div>
