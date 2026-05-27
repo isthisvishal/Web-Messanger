@@ -48,11 +48,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    // Retrieve settings (Fallbacks: 15MB max upload, 24 hours expiry)
-    const maxUploadSizeStr = await getSetting("MAX_UPLOAD_SIZE", "15"); // in MB
+    // Retrieve settings (Fallbacks: 20MB max upload, 24 hours expiry)
+    const maxUploadSizeStr = await getSetting("MAX_UPLOAD_SIZE", "20"); // in MB
     const fileExpiryHoursStr = await getSetting("FILE_EXPIRY_HOURS", "24"); // in Hours
 
-    const maxUploadSizeMB = parseFloat(maxUploadSizeStr) || 15;
+    const maxUploadSizeMB = parseFloat(maxUploadSizeStr) || 20;
     const fileExpiryHours = parseFloat(fileExpiryHoursStr) || 24;
 
     // Trigger cleanup asynchronously

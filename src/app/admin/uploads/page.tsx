@@ -12,7 +12,7 @@ import { HardDrive, Clock, Settings, Loader2, ArrowLeft } from "lucide-react";
 export default function UploadSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [maxUploadSize, setMaxUploadSize] = useState("15");
+  const [maxUploadSize, setMaxUploadSize] = useState("20");
   const [fileExpiryHours, setFileExpiryHours] = useState("24");
   const [stats, setStats] = useState({ totalFiles: 0, totalBytes: 0 });
 
@@ -93,6 +93,7 @@ export default function UploadSettingsPage() {
             <Link href="/admin/users" className="px-3 py-2 text-sm rounded-lg hover:bg-accent transition-colors">Users</Link>
             <Link href="/admin/smtp" className="px-3 py-2 text-sm rounded-lg hover:bg-accent transition-colors">SMTP</Link>
             <Link href="/admin/email-templates" className="px-3 py-2 text-sm rounded-lg hover:bg-accent transition-colors">Templates</Link>
+            <Link href="/admin/uploads" className="px-3 py-2 text-sm rounded-lg bg-accent transition-colors">Uploads</Link>
             <Link href="/chat" className="px-3 py-2 text-sm rounded-lg hover:bg-accent transition-colors">← Back</Link>
           </div>
         </div>
