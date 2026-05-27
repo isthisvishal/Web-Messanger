@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { toast } from "sonner";
 import {
   Shield, Send, LogOut, Settings, Users, MessageSquare,
-  Search, Plus, Moon, Sun, Loader2, Lock, Unlock, Eye, EyeOff, UserPlus
+  Search, Plus, Moon, Sun, Loader2, Lock, Unlock, Eye, EyeOff, UserPlus, Paperclip
 } from "lucide-react";
 import { useTheme } from "next-themes";
 
@@ -54,6 +54,26 @@ interface DecryptedMsg {
   createdAt: string;
 }
 
+function bufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function base64ToBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
 export default function ChatPage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -84,6 +104,225 @@ export default function ChatPage() {
   const [showSearchModal, setShowSearchModal] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const [decryptedFiles, setDecryptedFiles] = useState<{ [msgId: string]: { url: string; loading: boolean; error: boolean } }>({});
+
+  const decryptAttachment = async (msgId: string, url: string, keyB64: string, ivB64: string, mimeType: string) => {
+    if (decryptedFiles[msgId]) return;
+
+    setDecryptedFiles(prev => ({ ...prev, [msgId]: { url: "", loading: true, error: false } }));
+
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to download file");
+      const encryptedData = await res.arrayBuffer();
+
+      const rawKey = base64ToBuffer(keyB64);
+      const iv = new Uint8Array(base64ToBuffer(ivB64));
+
+      const fileKey = await window.crypto.subtle.importKey(
+        "raw",
+        rawKey,
+        { name: "AES-GCM" },
+        true,
+        ["decrypt"]
+      );
+
+      const decrypted = await window.crypto.subtle.decrypt(
+        { name: "AES-GCM", iv },
+        fileKey,
+        encryptedData
+      );
+
+      const blob = new Blob([decrypted], { type: mimeType });
+      const objectUrl = URL.createObjectURL(blob);
+
+      setDecryptedFiles(prev => ({
+        ...prev,
+        [msgId]: { url: objectUrl, loading: false, error: false }
+      }));
+    } catch (err) {
+      console.error("Failed to decrypt attachment:", err);
+      setDecryptedFiles(prev => ({
+        ...prev,
+        [msgId]: { url: "", loading: false, error: true }
+      }));
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedConv || !cryptoContext) return;
+
+    const MAX_SIZE = 15 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      toast.error("File size exceeds the 15MB security limit.");
+      return;
+    }
+
+    const blockedExtensions = [".zip", ".tar", ".gz", ".rar", ".7z", ".exe", ".bat", ".sh", ".cmd", ".msi", ".scr", ".pif", ".com"];
+    const fileExt = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
+    if (blockedExtensions.includes(fileExt) || file.name.toLowerCase().split(".").some(part => blockedExtensions.includes(part))) {
+      toast.error("Dangerous file types (like archives or executables) are blocked.");
+      return;
+    }
+
+    const convKey = convKeys[selectedConv];
+    if (!convKey) {
+      toast.error("Cannot encrypt file: conversation key is locked.");
+      return;
+    }
+
+    setSending(true);
+    const uploadToast = toast.loading("Encrypting and uploading file...");
+
+    try {
+      const fileBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+      });
+
+      const fileKey = await window.crypto.subtle.generateKey(
+        { name: "AES-GCM", length: 256 },
+        true,
+        ["encrypt", "decrypt"]
+      );
+      const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+      const ciphertext = await window.crypto.subtle.encrypt(
+        { name: "AES-GCM", iv },
+        fileKey,
+        fileBuffer
+      );
+
+      const encryptedBlob = new Blob([ciphertext], { type: "application/octet-stream" });
+      const formData = new FormData();
+      formData.append("file", encryptedBlob, file.name);
+
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const uploadData = await uploadRes.json();
+      if (!uploadRes.ok || !uploadData.success) {
+        throw new Error(uploadData.error || "Upload failed");
+      }
+
+      const exportedRaw = await window.crypto.subtle.exportKey("raw", fileKey);
+      const fileKeyB64 = bufferToBase64(exportedRaw);
+      const ivB64 = bufferToBase64(iv.buffer);
+
+      const filePayload = JSON.stringify({
+        type: "file",
+        url: uploadData.url,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type || "application/octet-stream",
+        key: fileKeyB64,
+        iv: ivB64,
+      });
+
+      const encryptedPayload = await encryptChatMessage(filePayload, convKey);
+
+      const res = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: selectedConv,
+          ciphertext: encryptedPayload.ciphertext,
+          nonce: encryptedPayload.nonce,
+          messageIndex: decryptedMessages.length,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        toast.success("File sent securely!", { id: uploadToast });
+        const savedMsg = data.data;
+        const plainMsg: DecryptedMsg = {
+          id: savedMsg.id,
+          senderId: savedMsg.senderId,
+          senderName: savedMsg.sender.displayName,
+          content: filePayload,
+          createdAt: savedMsg.createdAt,
+        };
+        setDecryptedMessages(prev => [...prev, plainMsg]);
+        fetchConversations(cryptoContext);
+      } else {
+        throw new Error("Failed to save message");
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to upload file", { id: uploadToast });
+    } finally {
+      setSending(false);
+      e.target.value = "";
+    }
+  };
+
+  const FileAttachmentBubble = ({ msgId, fileMeta, isOwn }: { msgId: string; fileMeta: any; isOwn: boolean }) => {
+    const fileState = decryptedFiles[msgId];
+
+    useEffect(() => {
+      decryptAttachment(msgId, fileMeta.url, fileMeta.key, fileMeta.iv, fileMeta.mimeType);
+    }, [msgId]);
+
+    if (!fileState || fileState.loading) {
+      return (
+        <div className="flex items-center gap-2 py-1 text-xs opacity-80">
+          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+          <span>Decrypting attachment...</span>
+        </div>
+      );
+    }
+
+    if (fileState.error) {
+      return (
+        <div className="flex items-center gap-2 py-1 text-xs text-destructive">
+          <span>⚠️ Failed to decrypt file</span>
+        </div>
+      );
+    }
+
+    const isImage = fileMeta.mimeType.startsWith("image/");
+    const isVideo = fileMeta.mimeType.startsWith("video/");
+
+    if (isImage) {
+      return (
+        <div className="relative group">
+          <img src={fileState.url} alt={fileMeta.fileName} className="max-w-xs rounded-lg shadow-sm border border-border/20 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(fileState.url, "_blank")} />
+          <p className="text-[10px] opacity-60 mt-1 truncate max-w-xs">{fileMeta.fileName}</p>
+        </div>
+      );
+    }
+
+    if (isVideo) {
+      return (
+        <div className="space-y-1">
+          <video src={fileState.url} controls className="max-w-xs rounded-lg shadow-sm border border-border/20" />
+          <p className="text-[10px] opacity-60 truncate max-w-xs">{fileMeta.fileName}</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center gap-3 p-2.5 rounded-xl bg-accent/20 border border-border/20 max-w-xs">
+        <div className="w-9 h-9 rounded-lg bg-primary/20 flex items-center justify-center text-primary font-bold">
+          {fileMeta.fileName.split(".").pop()?.toUpperCase() || "FILE"}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold truncate text-foreground">{fileMeta.fileName}</p>
+          <p className="text-[10px] text-muted-foreground">{(fileMeta.fileSize / 1024).toFixed(1)} KB</p>
+        </div>
+        <a href={fileState.url} download={fileMeta.fileName} className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs font-semibold">
+          Download
+        </a>
+      </div>
+    );
+  };
 
   useEffect(() => {
     checkUserKeys();
@@ -683,6 +922,18 @@ export default function ChatPage() {
               ) : (
                 decryptedMessages.map(msg => {
                   const isOwn = msg.senderId === currentUserId;
+                  let isFile = false;
+                  let fileMeta: any = null;
+                  if (msg.content.trim().startsWith("{") && msg.content.trim().endsWith("}")) {
+                    try {
+                      const parsed = JSON.parse(msg.content);
+                      if (parsed.type === "file") {
+                        isFile = true;
+                        fileMeta = parsed;
+                      }
+                    } catch {}
+                  }
+
                   return (
                     <div key={msg.id} className={`flex ${isOwn ? "justify-end" : "justify-start"} animate-slide-in`}>
                       <div className={`max-w-[70%] rounded-2xl px-4 py-2.5 shadow-sm border ${
@@ -690,7 +941,11 @@ export default function ChatPage() {
                           ? "bg-primary text-primary-foreground rounded-br-none border-primary/10"
                           : "bg-card border-border/40 rounded-bl-none text-foreground"
                       }`}>
-                        <p className="text-sm break-words leading-relaxed">{msg.content}</p>
+                        {isFile ? (
+                          <FileAttachmentBubble msgId={msg.id} fileMeta={fileMeta} isOwn={isOwn} />
+                        ) : (
+                          <p className="text-sm break-words leading-relaxed">{msg.content}</p>
+                        )}
                         <p className="text-[9px] opacity-60 mt-1.5 text-right font-medium">
                           {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </p>
@@ -704,14 +959,30 @@ export default function ChatPage() {
 
 
             <div className="p-4 border-t border-border bg-card/30 backdrop-blur-md">
-              <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="flex gap-2">
+              <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="flex gap-2 items-center">
+                <input
+                  type="file"
+                  id="chat-file-input"
+                  className="hidden"
+                  onChange={handleFileChange}
+                  disabled={sending}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-11 w-11 shrink-0 border-muted-foreground/20 bg-background/50"
+                  disabled={sending}
+                  onClick={() => document.getElementById("chat-file-input")?.click()}
+                >
+                  <Paperclip className="w-4 h-4" />
+                </Button>
                 <Input
                   placeholder="Type an encrypted message..."
                   value={newMessage}
                   onChange={e => setNewMessage(e.target.value)}
                   className="flex-1 h-11 bg-background/50 border-muted-foreground/20"
                   disabled={sending}
-                  required
                 />
                 <Button type="submit" disabled={sending || !newMessage.trim()} size="icon" className="h-11 w-11">
                   {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
