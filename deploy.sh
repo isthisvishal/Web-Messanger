@@ -156,15 +156,6 @@ docker compose build --no-cache
 info "Starting services..."
 docker compose up -d
 
-info "Waiting for PostgreSQL..."
-for i in {1..30}; do
-  docker compose exec postgres pg_isready -U web_messenger -d web_messenger >/dev/null 2>&1 && break
-  sleep 2
-done
-
-info "Running database migrations..."
-docker compose exec app node node_modules/prisma/build/index.js migrate deploy
-
 echo ""
 success "Web Messenger deployed successfully!"
 echo ""
