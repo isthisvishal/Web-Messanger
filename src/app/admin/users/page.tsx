@@ -75,6 +75,16 @@ export default function AdminUsersPage() {
     } catch { toast.error("Failed"); } finally { setActionLoading(false); }
   };
 
+  const handleUnverify = async (id: string) => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/admin/users/${id}/unverify`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) { toast.success("User unverified successfully"); fetchUsers(); }
+      else { toast.error(data.error || "Failed to unverify user"); }
+    } catch { toast.error("Failed"); } finally { setActionLoading(false); }
+  };
+
   const handleRole = async (id: string, action: "promote" | "demote") => {
     setActionLoading(true);
     try {
@@ -225,7 +235,11 @@ export default function AdminUsersPage() {
                                   <Ban className="w-3 h-3 mr-1" />Ban
                                 </Button>
                               )}
-                              {!user.emailVerified && (
+                              {user.emailVerified ? (
+                                <Button size="sm" variant="outline" onClick={() => handleUnverify(user.id)} disabled={actionLoading} className="text-amber-500 hover:text-amber-600">
+                                  Unverify
+                                </Button>
+                              ) : (
                                 <Button size="sm" variant="outline" onClick={() => handleVerify(user.id)} disabled={actionLoading} className="text-green-500 hover:text-green-600">
                                   <UserCheck className="w-3 h-3 mr-1" />Verify
                                 </Button>
