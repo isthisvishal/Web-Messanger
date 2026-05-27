@@ -1,0 +1,235 @@
+// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// User & Authentication
+// =============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  passwordHash  String? // null for OAuth-only users
+  displayName   String
+  avatarUrl     String?
+  role          Role      @default(USER)
+  isBanned      Boolean   @default(false)
+  banReason     String?
+  bannedAt      DateTime?
+  bannedBy      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+  lastLoginIp   String? // hashed with SHA-256, NEVER plaintext
+
+  // Encryption keys (server stores encrypted versions only)
+  encryptedIdentityKey String? // private key encrypted with master key
+  publicIdentityKey    String? // X25519/P-256 public key — safe to store
+  encryptedKeyBlob     String? // master key encrypted with Argon2id(password)
+  keyBlobSalt          String? // Argon2id salt for key blob
+
+  // Prekeys for X3DH (Signal protocol)
+  signedPrekey   String? // JSON: { keyId, publicKey, signature }
+  oneTimePrekeys String[] // Array of { keyId, publicKey }
+
+  // Relations
+  passkeys      Passkey[]
+  oauthAccounts OAuthAccount[]
+  otpCodes      OtpCode[]
+  sessions      Session[]
+  sentMessages  Message[]              @relation("SentMessages")
+  conversations ConversationMember[]
+
+  @@index([email])
+  @@index([role])
+  // Enforced at database level via raw migration index:
+  // CREATE UNIQUE INDEX one_super_admin ON "User" (role) WHERE role = 'SUPER_ADMIN';
+  @@index([isBanned])
+}
+
+model Passkey {
+  id                  String    @id @default(cuid())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId        String    @unique
+  credentialPublicKey Bytes
+  counter             BigInt
+  transports          String[]
+  deviceName          String?
+  createdAt           DateTime  @default(now())
+  lastUsedAt          DateTime?
+
+  @@index([userId])
+}
+
+model OAuthAccount {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider          String // "google"
+  providerAccountId String
+  accessToken       String? // encrypted at rest
+  refreshToken      String? // encrypted at rest
+  expiresAt         DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique // hashed session token
+  ipHash     String?
+  userAgent  String?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model OtpCode {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   OtpPurpose
+  codeHash  String // bcrypt hash of the 6-digit code — NEVER store plaintext
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int        @default(0)
+  createdAt DateTime   @default(now())
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+}
+
+// =============================================================================
+// Messaging
+// =============================================================================
+
+model Conversation {
+  id        String               @id @default(cuid())
+  createdAt DateTime             @default(now())
+  members   ConversationMember[]
+  messages  Message[]
+}
+
+model ConversationMember {
+  id                  String       @id @default(cuid())
+  conversationId      String
+  conversation        Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId              String
+  user                User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Per-conversation encrypted session key (encrypted with user's public key)
+  encryptedSessionKey String?
+  joinedAt            DateTime     @default(now())
+
+  @@unique([conversationId, userId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation("SentMessages", fields: [senderId], references: [id])
+  // Only ciphertext is stored — server NEVER sees plaintext
+  ciphertext     String // base64 AES-256-GCM encrypted content
+  nonce          String // base64 96-bit random nonce
+  // Ratchet state (for Double Ratchet protocol)
+  messageIndex   Int
+  createdAt      DateTime     @default(now())
+  deliveredAt    DateTime?
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([createdAt])
+}
+
+// =============================================================================
+// Admin Configuration
+// =============================================================================
+
+// Admin-configurable SMTP settings (values encrypted at rest in DB)
+model SmtpConfig {
+  id         String    @id @default(cuid())
+  host       String // encrypted
+  port       Int
+  secure     Boolean   @default(true)
+  username   String // encrypted
+  password   String // encrypted
+  fromName   String
+  fromEmail  String
+  isActive   Boolean   @default(false)
+  testedAt   DateTime?
+  testResult String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  createdBy  String
+}
+
+// Admin-configurable email templates
+model EmailTemplate {
+  id        String            @id @default(cuid())
+  type      EmailTemplateType @unique
+  subject   String
+  htmlBody  String // supports {{variables}}
+  textBody  String // plain text fallback
+  isActive  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  updatedBy String
+}
+
+model AdminAuditLog {
+  id        String   @id @default(cuid())
+  adminId   String
+  action    String // e.g. "BAN_USER", "CHANGE_SMTP", "MAKE_ADMIN"
+  targetId  String?
+  metadata  Json?
+  ipHash    String?
+  createdAt DateTime @default(now())
+
+  @@index([adminId])
+  @@index([createdAt])
+}
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN // first registered user, cannot be demoted
+}
+
+enum OtpPurpose {
+  LOGIN // OTP sent after correct password
+  FORGOT_PASSWORD // OTP for password reset
+  EMAIL_VERIFY // OTP to verify email at registration
+  CHANGE_EMAIL
+}
+
+enum EmailTemplateType {
+  LOGIN_OTP
+  FORGOT_PASSWORD_OTP
+  EMAIL_VERIFICATION
+  WELCOME
+  ACCOUNT_BANNED
+  PASSWORD_CHANGED
+}
