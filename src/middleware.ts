@@ -13,13 +13,18 @@ export function middleware(request: NextRequest) {
   const array = new Uint8Array(16);
   crypto.getRandomValues(array);
   const nonce = btoa(String.fromCharCode(...array));
+  const isDev = process.env.NODE_ENV === "development";
   const cspHeader = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}'`,
+    isDev
+      ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' 'nonce-${nonce}'`
+      : `script-src 'self' 'nonce-${nonce}'`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: https:",
-    "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com",
+    isDev
+      ? "connect-src * ws: wss: data:"
+      : "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
